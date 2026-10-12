@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>お客様情報のご入力｜株式会社Baseone</title>
+<!-- baseone-qr-entry v1 (2026-10-12) 受付QRの入口。データは受付QRフォーム(GAS)へ送るだけ。この画面は何も保存しない。 -->
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;margin:0;background:#f4f6f8;color:#222}
+  #boot{max-width:560px;margin:0 auto;padding:60px 20px;text-align:center;font-size:16px;line-height:1.9}
+  #boot .big{font-size:20px;font-weight:bold;margin-bottom:10px}
+  #boot button{margin-top:18px;border:0;border-radius:8px;background:#0F5E68;color:#fff;font-size:16px;font-weight:bold;padding:14px 22px}
+  .spin{width:34px;height:34px;border:4px solid #d5dddb;border-top-color:#0F5E68;border-radius:50%;margin:0 auto 16px;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="boot"><div class="spin"></div>読み込んでいます…</div>
+<div id="app"></div>
+<script>
+(function () {
+  'use strict';
+  var GAS = 'https://script.google.com/macros/s/AKfycbwYlos0B4mqvHQ1F6qxICWdEVLDktBmXgg0nWIQMcxcvKEwwiC-bk7puHV6VEuijewE/exec';
+  var t = new URLSearchParams(location.search).get('t') || '';
+  var boot = document.getElementById('boot');
+
+  function msg(big, small, retry) {
+    boot.innerHTML = '<div class="big">' + big + '</div><div style="color:#666">' + small + '</div>' +
+      (retry ? '<button onclick="location.reload()">もう一度読み込む</button>' : '');
+    boot.style.display = '';
+  }
+
+  // Googleのログインを持ち込まない（credentials:'omit'）。だから複数ログインでも止まらない。
+  function call(body, ms) {
+    var ctl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, ms || 20000) : null;
+    return fetch(GAS, {
+      method: 'POST', credentials: 'omit', redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined
+    }).then(function (r) { return r.json(); })
+      .finally(function () { if (timer) clearTimeout(timer); });
+  }
+
+  // 既存フォームの google.script.run を、そのまま動くように置き換える
+  function runner(ok, ng) {
+    function go(fn, payload) {
+      call(payload, 30000).then(function (j) {
+        if (fn === 'zip') { if (ok) ok(j && j.ok ? j.r : ''); return; }
+        if (j && j.ok === false) { if (ng) ng(new Error(j.msg || '送信できませんでした')); return; }
+        if (ok) ok(j);
+      }).catch(function (e) {
+        if (ng) ng(new Error('通信が切れました。電波のよい所でもう一度送信してください。'));
+      });
+    }
+    return {
+      withSuccessHandler: function (f) { return runner(f, ng); },
+      withFailureHandler: function (f) { return runner(ok, f); },
+      zip:  function (z) { go('zip',  { fn: 'zip',  z: z }); },
+      save: function (d) { go('save', { fn: 'save', d: d }); }
+    };
+  }
+  window.google = { script: { run: runner(null, null) } };
+
+  if (!t) { msg('QRをもう一度読んでください', '担当者にQRを出してもらってください。', false); return; }
+
+  call({ fn: 'page', t: t }, 20000).then(function (j) {
+    if (!j || j.expired) { msg('時間切れです', '担当者にもう一度QRを出してもらってください。', false); return; }
+    if (!j.ok || !j.html) { msg('うまく開けませんでした', 'もう一度読み込んでください。', true); return; }
+    var app = document.getElementById('app');
+    app.innerHTML = j.html;
+    // innerHTML の script は動かないので、作り直して動かす
+    Array.prototype.forEach.call(app.querySelectorAll('script'), function (old) {
+      var s = document.createElement('script');
+      s.text = old.textContent;
+      old.parentNode.replaceChild(s, old);
+    });
+    boot.style.display = 'none';
+  }).catch(function () {
+    msg('電波が弱いようです', '少し待ってから、もう一度読み込んでください。', true);
+  });
+})();
+</script>
+</body>
+</html>
